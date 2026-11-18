@@ -1,52 +1,39 @@
 package com.negrets.bot
 
 import android.app.Notification
-import android.app.RemoteInput
+import android.app.PendingIntent
 import android.content.Intent
 import android.os.Bundle
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import androidx.core.app.RemoteInput
 
 class NegretsListener : NotificationListenerService() {
 
-    // SUAS VARIÁVEIS - VOCÊ MUDA AQUI
-    val variaveis = mapOf(
-        "{nome}" to "cliente",
-        "{codigo}" to "NEG-1234",
-        "{modelo}" to "iPhone 11",
-        "{status}" to "Em conserto - previsão hoje 17h",
-        "{preco_tela_iphone11}" to "350",
-        "{preco_bateria_a54}" to "180",
-        "{preco_capinha}" to "40",
-        "{pix}" to "11 99999-9999",
-        "{horario}" to "Seg a Sex 9h às 19h, Sáb 9h às 14h"
+    private val regras = mapOf(
+        "oi" to "Oi {nome}! Fala comigo 😎",
+        "bom dia" to "Bom dia {nome}! Como cê tá?",
+        "boa noite" to "Boa noite {nome}! Descansa bem!",
+        "tudo bem" to "Tudo certo {nome}, e com você?",
+        "negrets" to "Opa, chamou? Sou o Negrets Bot!"
     )
 
-    // SUAS REGRAS - IGUAL AUTORESPONDER
-    val regras = mapOf(
-        "tela iphone 11" to "Opa {nome}! Tela do iPhone 11 fica R\$350 + capinha R\$40 = R\$390. Fechando hoje faço R\$370 à vista. Quer agendar?",
-        "tela" to "Opa {nome}! Qual modelo? Manda 'tela iPhone 11' que eu te passo o preço na hora!",
-        "bateria a54" to "Bateria do A54 fica R\$180 com 3 meses de garantia! Quer agendar?",
-        "preco" to "Tabela NEGRET'S:\nTela iPhone 11 - R\$350\nBateria A54 - R\$180\nCapinha - R\$40\n\nTela + Capinha = R\$390!",
-        "rastreio" to "Me manda seu código tipo NEG-1234 que eu vejo seu celular!",
-        "neg-" to "Achei! Seu {modelo} código {codigo} está: {status}",
-        "horario" to "Funcionamos {horario}. Barueri - SP",
-        "pix" to "Nosso Pix é {pix} - NEGRET'S. Manda o comprovante!",
-        "oi" to "Opa {nome}! Bem-vindo a NEGRET'S! Digite PRECO pra ver preços, RASTREIO + código pra ver seu celular.",
-        "ola" to "Opa {nome}! Bem-vindo a NEGRET'S! Digite PRECO pra ver preços.",
-        "atendente" to "Te chamo já! Um atendente da NEGRET'S vai te atender em 2 min."
+    private val variaveis = mapOf(
+        "{bot}" to "Negrets Bot"
     )
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null) return
         if (sbn.packageName != "com.whatsapp" && sbn.packageName != "com.whatsapp.w4b") return
 
-        val extras = sbn.notification.extras
-        val texto = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: return
-        val quemMandou = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: return
+        val notification = sbn.notification ?: return
+        val extras = notification.extras ?: return
 
-        if (quemMandou == "Você" || quemMandou.contains("NEGRET'S")) return
-        if (texto.contains("NEGRET'S BOT")) return
+        val texto = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: return
+        val quemMandou = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: "amigo"
+
+        // Não responder a si mesmo / evitar loop
+        if (texto.contains("NEGRETS BOT")) return
 
         var resposta: String? = null
         for ((palavra, resp) in regras) {
@@ -57,7 +44,7 @@ class NegretsListener : NotificationListenerService() {
         }
         if (resposta == null) return
 
-        var final = resposta
+        var final = resposta!!
         for ((k, v) in variaveis) {
             final = final.replace(k, v)
         }
@@ -72,10 +59,15 @@ class NegretsListener : NotificationListenerService() {
             if (action.remoteInputs != null && action.remoteInputs.isNotEmpty()) {
                 val intent = Intent()
                 val bundle = Bundle()
-                bundle.putCharSequence(action.remoteInputs[0].resultKey, texto)
+                val remoteInput = action.remoteInputs[0]
+                bundle.putCharSequence(remoteInput.resultKey, texto)
                 RemoteInput.addResultsToIntent(action.remoteInputs, intent, bundle)
-                try { action.actionIntent.send(this, 0, intent) } catch (e: Exception) {}
-                break
+                try {
+                    action.actionIntent.send(this, 0, intent)
+                    break
+                } catch (e: PendingIntent.CanceledException) {
+                    e.printStackTrace()
+                }
             }
         }
     }
