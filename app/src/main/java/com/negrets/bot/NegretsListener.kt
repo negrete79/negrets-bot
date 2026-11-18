@@ -2,28 +2,37 @@ package com.negrets.bot
 
 import android.app.Notification
 import android.app.PendingIntent
+import android.app.RemoteInput
 import android.content.Intent
 import android.os.Bundle
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import androidx.core.app.RemoteInput
+import android.util.Log
 
 class NegretsListener : NotificationListenerService() {
 
+    // ===== CONFIGURAÇÃO =====
+    private val nomeBot = "Negrets Bot"
+
+    // Palavra que a pessoa manda -> resposta do bot
     private val regras = mapOf(
         "oi" to "Oi {nome}! Fala comigo 😎",
-        "bom dia" to "Bom dia {nome}! Como cê tá?",
+        "opa" to "Opa {nome}! Cheguei, o que manda?",
+        "bom dia" to "Bom dia {nome}! Como cê tá hoje?",
+        "boa tarde" to "Boa tarde {nome}! Bora conversar?",
         "boa noite" to "Boa noite {nome}! Descansa bem!",
         "tudo bem" to "Tudo certo {nome}, e com você?",
-        "negrets" to "Opa, chamou? Sou o Negrets Bot!"
-    )
-
-    private val variaveis = mapOf(
-        "{bot}" to "Negrets Bot"
+        "quem é você" to "Eu sou o {bot}! Bot criado pelo Negrets 🤖",
+        "negrets" to "Opa, chamou? Sou o {bot}!",
+        "ajuda" to "Fala {nome}, manda 'oi', 'bom dia' ou 'tudo bem' que eu respondo!",
+        "obrigado" to "Tamo junto {nome}! ❤️",
+        "valeu" to "Valeu {nome}! Precisando é só chamar."
     )
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null) return
+
+        // Só WhatsApp normal e Business
         if (sbn.packageName != "com.whatsapp" && sbn.packageName != "com.whatsapp.w4b") return
 
         val notification = sbn.notification ?: return
@@ -32,37 +41,43 @@ class NegretsListener : NotificationListenerService() {
         val texto = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: return
         val quemMandou = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: "amigo"
 
-        // Não responder a si mesmo / evitar loop
-        if (texto.contains("NEGRETS BOT")) return
+        // Não responder mensagem de grupo nem a si mesmo (evita loop infinito)
+        if (quemMandou.contains(":") || texto.contains(nomeBot)) return
+        if (texto.isBlank()) return
 
-        var resposta: String? = null
+        // Acha a resposta
+        var respostaEncontrada: String? = null
         for ((palavra, resp) in regras) {
             if (texto.lowercase().contains(palavra)) {
-                resposta = resp
+                respostaEncontrada = resp
                 break
             }
         }
-        if (resposta == null) return
+        if (respostaEncontrada == null) return
 
-        var final = resposta!!
-        for ((k, v) in variaveis) {
-            final = final.replace(k, v)
-        }
-        final = final.replace("{nome}", quemMandou)
+        // Troca as variáveis {nome} e {bot}
+        var final = respostaEncontrada
+            .replace("{nome}", quemMandou)
+            .replace("{bot}", nomeBot)
 
+        Log.d("NegretsBot", "Respondendo $quemMandou: $final")
         responder(sbn, final)
     }
 
-    fun responder(sbn: StatusBarNotification, texto: String) {
+    private fun responder(sbn: StatusBarNotification, texto: String) {
         val actions = sbn.notification.actions ?: return
+
         for (action in actions) {
-            if (action.remoteInputs != null && action.remoteInputs.isNotEmpty()) {
-                val intent = Intent()
-                val bundle = Bundle()
-                val remoteInput = action.remoteInputs[0]
-                bundle.putCharSequence(remoteInput.resultKey, texto)
-                RemoteInput.addResultsToIntent(action.remoteInputs, intent, bundle)
+            val remoteInputs = action.remoteInputs ?: continue
+            if (remoteInputs.isEmpty()) continue
+
+            // Pega a ação de "Responder"
+            if (action.title.toString().lowercase().contains("responder") || remoteInputs.isNotEmpty()) {
                 try {
+                    val intent = Intent()
+                    val bundle = Bundle()
+                    bundle.putCharSequence(remoteInputs[0].resultKey, texto)
+                    RemoteInput.addResultsToIntent(remoteInputs, intent, bundle)
                     action.actionIntent.send(this, 0, intent)
                     break
                 } catch (e: PendingIntent.CanceledException) {
